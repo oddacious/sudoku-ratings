@@ -1,0 +1,19 @@
+# Data cache
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+*.ipynb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Other
+.coverage
+*-session.txt
