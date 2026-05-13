@@ -175,35 +175,37 @@ class TestGetAllCompetitionsESC(unittest.TestCase):
         self.assertEqual(len(esc_2026), 7)
         self.assertEqual(sorted(c.round for c in esc_2026), list(range(1, 8)))
 
-    def test_esc_ordering_without_gp_dates(self):
-        """Without GP dates, ESC 2026 rounds should come before undated GP 2026 rounds.
+    def test_esc_ordering_gp_r4_before_esc_r5_after(self):
+        """GP rounds 1-4 should come before ESC, GP rounds 5-8 should come after.
 
-        This uses the typical-month sentinel (GP≈March, ESC≈May). Since ESC has known
-        dates in May, and GP has no dates (sentinel March), GP rounds cluster before ESC.
+        GP R4 end date is Apr 15, ESC end date is May 12, GP R5 end date is May 20.
+        Undated rounds 1-3 are interpolated before R4; rounds 6-8 after R5.
         """
         all_comps = get_all_competitions()
         year_2026 = [c for c in all_comps if c.year == 2026]
 
-        gp_indices = [i for i, c in enumerate(year_2026) if c.event_type == "GP"]
         esc_indices = [i for i, c in enumerate(year_2026) if c.event_type == "ESC"]
+        gp_before = [i for i, c in enumerate(year_2026) if c.event_type == "GP" and c.round <= 4]
+        gp_after = [i for i, c in enumerate(year_2026) if c.event_type == "GP" and c.round >= 5]
 
-        # All GP rounds (sentinel March) should come before all ESC rounds (dated May 12)
-        self.assertGreater(min(esc_indices), max(gp_indices))
+        # GP R1-4 all before ESC
+        self.assertGreater(min(esc_indices), max(gp_before))
+        # GP R5-8 all after ESC
+        self.assertGreater(min(gp_after), max(esc_indices))
 
-    def test_esc_ordering_respects_gp_dates(self):
-        """When a GP round has a date after ESC, it should sort after ESC."""
-        # Inject a date for GP 2026 round 5 that is after ESC's date
-        fake_dates = dict(COMPETITION_DATES)
-        fake_dates[(2026, 5, "GP")] = date(2026, 6, 15)
+    def test_esc_ordering_without_any_gp_dates(self):
+        """Without any GP dates, undated GP clusters before ESC via March sentinel."""
+        fake_dates = {k: v for k, v in COMPETITION_DATES.items() if k[2] != "GP"}
 
         with patch("ratings.competitions.COMPETITION_DATES", fake_dates):
             all_comps = get_all_competitions()
 
         year_2026 = [c for c in all_comps if c.year == 2026]
-        esc_r1_idx = next(i for i, c in enumerate(year_2026) if c.event_type == "ESC" and c.round == 1)
-        gp_r5_idx = next(i for i, c in enumerate(year_2026) if c.event_type == "GP" and c.round == 5)
+        gp_indices = [i for i, c in enumerate(year_2026) if c.event_type == "GP"]
+        esc_indices = [i for i, c in enumerate(year_2026) if c.event_type == "ESC"]
 
-        self.assertGreater(gp_r5_idx, esc_r1_idx)
+        # All undated GP (March sentinel) before dated ESC (May 12)
+        self.assertGreater(min(esc_indices), max(gp_indices))
 
 
 class TestGetPriorGPRoundsESC(unittest.TestCase):
@@ -237,12 +239,23 @@ class TestGetPriorGPRoundsESC(unittest.TestCase):
 class TestFindAmbiguousOrderings(unittest.TestCase):
     """Test find_ambiguous_orderings."""
 
-    def test_detects_esc_gp_ambiguity(self):
-        """Should flag 2026 GP as ambiguous relative to dated ESC 2026."""
-        warnings = find_ambiguous_orderings()
-        # ESC 2026 has dates; GP 2026 does not — should be flagged
+    def test_detects_esc_gp_ambiguity_when_gp_undated(self):
+        """Should flag 2026 GP when it has no dates at all but ESC is dated."""
+        # Remove all GP dates so GP 2026 is fully unanchored
+        fake_dates = {k: v for k, v in COMPETITION_DATES.items() if k[2] != "GP"}
+
+        with patch("ratings.competitions.COMPETITION_DATES", fake_dates):
+            warnings = find_ambiguous_orderings()
+
         gp_warnings = [w for w in warnings if "2026" in w and "GP" in w]
         self.assertTrue(len(gp_warnings) > 0)
+
+    def test_no_ambiguity_when_gp_has_anchor_dates(self):
+        """GP 2026 should not be flagged when at least one round has a known date."""
+        # COMPETITION_DATES already has GP R4 and R5 dates
+        warnings = find_ambiguous_orderings()
+        gp_warnings = [w for w in warnings if "2026" in w and "GP" in w]
+        self.assertEqual(len(gp_warnings), 0)
 
     def test_clears_when_gp_dated_around_esc(self):
         """No ambiguity when all GP 2026 rounds are given dates."""
