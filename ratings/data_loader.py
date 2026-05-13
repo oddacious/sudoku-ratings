@@ -17,6 +17,7 @@ if str(_SUDOKUDOS_PATH) not in sys.path:
 from shared.data.loaders.eurosudoku import load_eurosudoku  # noqa: E402
 from shared.data.loaders.gp import load_gp  # noqa: E402
 from shared.data.loaders.wsc import load_wsc  # noqa: E402
+from shared.competitions.constants import ESC_NAME_TO_GP_ID_OVERRIDE  # noqa: E402
 from shared.data.manipulation import attempted_mapping, merge_unflat_datasets  # noqa: E402
 
 from ratings.competition_results import normalize_all_tables  # noqa: E402
@@ -125,7 +126,7 @@ def load_esc_mapped(
             gp_directory = str(_SUDOKUDOS_PATH / gp_directory)
         gp_df = load_gp(csv_directory=gp_directory)
 
-    return attempted_mapping(esc_df, gp_df)
+    return attempted_mapping(esc_df, gp_df, manual_override=ESC_NAME_TO_GP_ID_OVERRIDE)
 
 
 def load_gp_wsc_separate(
