@@ -1,11 +1,19 @@
 """Tests for the competitions module."""
 
 import unittest
+from datetime import date
+from unittest.mock import patch
 
 from ratings.competitions import (
+    COMPETITION_DATES,
     CompetitionIdentifier,
     identify_n_prior_competitions,
     get_prior_gp_rounds,
+    get_competition_date,
+    get_all_competitions,
+    find_ambiguous_orderings,
+    esc_rounds_by_year,
+    all_esc_round_names,
     gp_rounds_by_year,
     wsc_rounds_by_year,
     get_all_years)
@@ -127,6 +135,135 @@ class TestGetPriorGpRounds(unittest.TestCase):
         # Pre-2014 WSC uses 2014 GP as anchor for calibration
         self.assertEqual(len(result), 7)  # 2014 had 7 GP rounds
         self.assertEqual(result[0], CompetitionIdentifier(2014, 1, "GP"))
+
+class TestESCRoundsByYear(unittest.TestCase):
+    """Test esc_rounds_by_year."""
+
+    def test_2026_has_seven_rounds(self):
+        rounds = esc_rounds_by_year()
+        self.assertIn(2026, rounds)
+        self.assertEqual(list(rounds[2026]), list(range(1, 8)))
+
+    def test_unknown_year_absent(self):
+        rounds = esc_rounds_by_year()
+        self.assertNotIn(2025, rounds)
+        self.assertNotIn(2020, rounds)
+
+
+class TestAllESCRoundNames(unittest.TestCase):
+    """Test all_esc_round_names."""
+
+    def test_prefix_is_esc(self):
+        names = all_esc_round_names()
+        self.assertTrue(all(n.startswith("ESC_t") for n in names))
+
+    def test_round_seven_included(self):
+        names = all_esc_round_names()
+        self.assertIn("ESC_t7 points", names)
+
+    def test_round_one_included(self):
+        names = all_esc_round_names()
+        self.assertIn("ESC_t1 points", names)
+
+
+class TestGetAllCompetitionsESC(unittest.TestCase):
+    """Test that get_all_competitions includes ESC rounds."""
+
+    def test_esc_2026_present(self):
+        all_comps = get_all_competitions()
+        esc_2026 = [c for c in all_comps if c.event_type == "ESC" and c.year == 2026]
+        self.assertEqual(len(esc_2026), 7)
+        self.assertEqual(sorted(c.round for c in esc_2026), list(range(1, 8)))
+
+    def test_esc_ordering_without_gp_dates(self):
+        """Without GP dates, ESC 2026 rounds should come before undated GP 2026 rounds.
+
+        This uses the typical-month sentinel (GP≈March, ESC≈May). Since ESC has known
+        dates in May, and GP has no dates (sentinel March), GP rounds cluster before ESC.
+        """
+        all_comps = get_all_competitions()
+        year_2026 = [c for c in all_comps if c.year == 2026]
+
+        gp_indices = [i for i, c in enumerate(year_2026) if c.event_type == "GP"]
+        esc_indices = [i for i, c in enumerate(year_2026) if c.event_type == "ESC"]
+
+        # All GP rounds (sentinel March) should come before all ESC rounds (dated May 12)
+        self.assertGreater(min(esc_indices), max(gp_indices))
+
+    def test_esc_ordering_respects_gp_dates(self):
+        """When a GP round has a date after ESC, it should sort after ESC."""
+        # Inject a date for GP 2026 round 5 that is after ESC's date
+        fake_dates = dict(COMPETITION_DATES)
+        fake_dates[(2026, 5, "GP")] = date(2026, 6, 15)
+
+        with patch("ratings.competitions.COMPETITION_DATES", fake_dates):
+            all_comps = get_all_competitions()
+
+        year_2026 = [c for c in all_comps if c.year == 2026]
+        esc_r1_idx = next(i for i, c in enumerate(year_2026) if c.event_type == "ESC" and c.round == 1)
+        gp_r5_idx = next(i for i, c in enumerate(year_2026) if c.event_type == "GP" and c.round == 5)
+
+        self.assertGreater(gp_r5_idx, esc_r1_idx)
+
+
+class TestGetPriorGPRoundsESC(unittest.TestCase):
+    """Test get_prior_gp_rounds for ESC competitions."""
+
+    def test_esc_includes_same_year_gp(self):
+        """ESC 2026 should use all GP 2026 rounds as baseline (like WSC)."""
+        event = CompetitionIdentifier(year=2026, round=1, event_type="ESC")
+        result = get_prior_gp_rounds(event)
+
+        for rnd in range(1, 9):
+            self.assertIn(CompetitionIdentifier(2026, rnd, "GP"), result)
+
+    def test_esc_includes_prior_year_gp(self):
+        """ESC 2026 baseline should also include 2025 and earlier GP rounds."""
+        event = CompetitionIdentifier(year=2026, round=1, event_type="ESC")
+        result = get_prior_gp_rounds(event)
+
+        self.assertIn(CompetitionIdentifier(2025, 8, "GP"), result)
+        self.assertIn(CompetitionIdentifier(2024, 1, "GP"), result)
+
+    def test_esc_contains_only_gp(self):
+        """Baseline for ESC should never include WSC or ESC rounds."""
+        event = CompetitionIdentifier(year=2026, round=4, event_type="ESC")
+        result = get_prior_gp_rounds(event)
+
+        for comp in result:
+            self.assertEqual(comp.event_type, "GP")
+
+
+class TestFindAmbiguousOrderings(unittest.TestCase):
+    """Test find_ambiguous_orderings."""
+
+    def test_detects_esc_gp_ambiguity(self):
+        """Should flag 2026 GP as ambiguous relative to dated ESC 2026."""
+        warnings = find_ambiguous_orderings()
+        # ESC 2026 has dates; GP 2026 does not — should be flagged
+        gp_warnings = [w for w in warnings if "2026" in w and "GP" in w]
+        self.assertTrue(len(gp_warnings) > 0)
+
+    def test_clears_when_gp_dated_around_esc(self):
+        """No ambiguity when all GP 2026 rounds are given dates."""
+        fake_dates = dict(COMPETITION_DATES)
+        # Assign one date per GP round spread across the year
+        for rnd in range(1, 9):
+            fake_dates[(2026, rnd, "GP")] = date(2026, rnd, 1)
+
+        with patch("ratings.competitions.COMPETITION_DATES", fake_dates):
+            warnings = find_ambiguous_orderings()
+
+        gp_2026_warnings = [w for w in warnings if "2026" in w and "GP" in w]
+        self.assertEqual(len(gp_2026_warnings), 0)
+
+    def test_no_warnings_for_undated_gp_wsc_only_years(self):
+        """Years with only undated events (e.g., 2022 GP + WSC, both undated) emit no warnings."""
+        # In 2022, neither GP nor WSC have dates in COMPETITION_DATES
+        warnings = find_ambiguous_orderings()
+        year_2022_warnings = [w for w in warnings if w.startswith("2022")]
+        self.assertEqual(len(year_2022_warnings), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

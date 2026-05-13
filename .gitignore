@@ -17,3 +17,4 @@ venv/
 # Other
 .coverage
 *-session.txt
+export/

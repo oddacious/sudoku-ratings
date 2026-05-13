@@ -110,8 +110,11 @@ Examples:
     comp_parser = subparsers.add_parser('competitions', help='Show competition statistics')
     comp_parser.add_argument('--year', type=str,
                             help='Filter by year (e.g., 2024) or range (e.g., 2020-2024)')
-    comp_parser.add_argument('--event', type=str, choices=['GP', 'WSC', 'gp', 'wsc'],
-                            help='Filter by event type (GP or WSC)')
+    comp_parser.add_argument('--event', type=str,
+                            choices=['GP', 'WSC', 'ESC', 'gp', 'wsc', 'esc'],
+                            help='Filter by event type (GP, WSC, or ESC)')
+    comp_parser.add_argument('--check-ordering', action='store_true', dest='check_ordering',
+                            help='Report competitions with ambiguous timeline ordering')
 
     # Records command
     records_parser = subparsers.add_parser('records', help='Show career records')

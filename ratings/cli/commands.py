@@ -32,7 +32,7 @@ from ratings.evaluation import (
     backtest_glicko,
 )
 from ratings.backtest_bridge import get_rounds_only
-from ratings.competitions import get_all_competitions, get_competition_index
+from ratings.competitions import find_ambiguous_orderings, get_all_competitions, get_competition_index
 from ratings.competition_difficulty import difficulty_of_all_rounds
 from ratings.competition_results import fetch_participant_records
 from ratings.export import run_export
@@ -862,6 +862,16 @@ def cmd_records(args):
 
 def cmd_competitions(args):
     """Show competition statistics with difficulty relative to 2025 GP."""
+    if getattr(args, 'check_ordering', False):
+        warnings = find_ambiguous_orderings()
+        if warnings:
+            print("Ambiguous competition orderings detected:")
+            for w in warnings:
+                print(f"  {w}")
+        else:
+            print("No ambiguous orderings detected.")
+        return
+
     print("Loading data...", file=sys.stderr)
     normalized = load_normalized_data()
 
@@ -939,7 +949,7 @@ def cmd_competitions(args):
 
     # Print header
     year_label = args.year if args.year else "All Years"
-    event_label = args.event.upper() if args.event else "GP + WSC"
+    event_label = args.event.upper() if args.event else "GP + ESC + WSC"
     print(f"\nCompetition Statistics - {event_label} - {year_label}")
     print("Difficulty relative to 2025 GP (positive = harder, negative = easier)")
 

@@ -162,7 +162,7 @@ class TestArgumentParsing(unittest.TestCase):
 
         comp_parser = subparsers.add_parser('competitions')
         comp_parser.add_argument('--year', type=str)
-        comp_parser.add_argument('--event', type=str, choices=['GP', 'WSC', 'gp', 'wsc'])
+        comp_parser.add_argument('--event', type=str, choices=['GP', 'WSC', 'ESC', 'gp', 'wsc', 'esc'])
 
         # Single year
         args = parser.parse_args(['competitions', '--year', '2024'])
@@ -179,13 +179,19 @@ class TestArgumentParsing(unittest.TestCase):
 
         comp_parser = subparsers.add_parser('competitions')
         comp_parser.add_argument('--year', type=str)
-        comp_parser.add_argument('--event', type=str, choices=['GP', 'WSC', 'gp', 'wsc'])
+        comp_parser.add_argument('--event', type=str, choices=['GP', 'WSC', 'ESC', 'gp', 'wsc', 'esc'])
 
         args = parser.parse_args(['competitions', '--event', 'GP'])
         self.assertEqual(args.event, 'GP')
 
         args = parser.parse_args(['competitions', '--event', 'wsc'])
         self.assertEqual(args.event, 'wsc')
+
+        args = parser.parse_args(['competitions', '--event', 'ESC'])
+        self.assertEqual(args.event, 'ESC')
+
+        args = parser.parse_args(['competitions', '--event', 'esc'])
+        self.assertEqual(args.event, 'esc')
 
         # Invalid event should fail
         with self.assertRaises(SystemExit):

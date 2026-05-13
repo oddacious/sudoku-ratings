@@ -14,6 +14,7 @@ if str(_SUDOKUDOS_PATH) not in sys.path:
 
 # pylint: disable=wrong-import-position
 # Loading the uncached versions, to avoid importing streamlit
+from shared.data.loaders.eurosudoku import load_eurosudoku  # noqa: E402
 from shared.data.loaders.gp import load_gp  # noqa: E402
 from shared.data.loaders.wsc import load_wsc  # noqa: E402
 from shared.data.manipulation import attempted_mapping, merge_unflat_datasets  # noqa: E402
@@ -99,6 +100,34 @@ def load_difficulty_cache() -> Optional[pl.DataFrame]:
     return None
 
 
+def load_esc_mapped(
+    esc_directory: str = "data/raw/eurosudoku",
+    gp_df=None,
+    gp_directory: str = "data/processed/gp",
+) -> pl.DataFrame:
+    """Load ESC data mapped to GP user_pseudo_id.
+
+    Args:
+        esc_directory: Path to ESC CSV files
+        gp_df: Pre-loaded GP DataFrame; loaded from gp_directory if None
+        gp_directory: Path to GP CSV files (used only if gp_df is None)
+
+    Returns:
+        ESC DataFrame with user_pseudo_id matched to GP identifiers where possible
+    """
+    if not Path(esc_directory).is_absolute():
+        esc_directory = str(_SUDOKUDOS_PATH / esc_directory)
+
+    esc_df = load_eurosudoku(csv_directory=esc_directory)
+
+    if gp_df is None:
+        if not Path(gp_directory).is_absolute():
+            gp_directory = str(_SUDOKUDOS_PATH / gp_directory)
+        gp_df = load_gp(csv_directory=gp_directory)
+
+    return attempted_mapping(esc_df, gp_df)
+
+
 def load_gp_wsc_separate(
     gp_directory: str = "data/processed/gp",
     wsc_directory: str = "data/raw/wsc/"
@@ -131,6 +160,7 @@ def load_gp_wsc_separate(
 def load_normalized_data(
     gp_directory: str = "data/processed/gp",
     wsc_directory: str = "data/raw/wsc/",
+    esc_directory: str = "data/raw/eurosudoku",
     use_cache: bool = True
 ) -> pl.DataFrame:
     """Load and normalize data to long format (one row per solver-round).
@@ -138,6 +168,7 @@ def load_normalized_data(
     Args:
         gp_directory: Path to GP CSV files
         wsc_directory: Path to WSC CSV files
+        esc_directory: Path to ESC CSV files
         use_cache: If True, use cached data if available
 
     Returns:
@@ -148,7 +179,8 @@ def load_normalized_data(
         return pl.read_parquet(_NORMALIZED_CACHE)
 
     gp_df, wsc_df = load_gp_wsc_separate(gp_directory, wsc_directory)
-    result = normalize_all_tables(gp_df, wsc_df)
+    esc_df = load_esc_mapped(esc_directory, gp_df=gp_df)
+    result = normalize_all_tables(gp_df, wsc_df, esc_df)
 
     # Cache the result
     _ensure_cache_dir()

@@ -9,11 +9,13 @@ from ratings.competition_results import (
     melt_by_columns,
     normalize_table_gp,
     normalize_table_wsc,
+    normalize_table_esc,
     normalize_gp_scoring_scale,
     normalize_all_tables,
     fetch_participant_records,
 )
-from ratings.competitions import CompetitionIdentifier, all_gp_round_names, all_wsc_round_names
+from ratings.competitions import (
+    CompetitionIdentifier, all_esc_round_names, all_gp_round_names, all_wsc_round_names)
 
 
 def create_full_gp_table(rows: list[dict]) -> pl.DataFrame:
@@ -32,6 +34,27 @@ def create_full_gp_table(rows: list[dict]) -> pl.DataFrame:
         base_data["user_pseudo_id"].append(row["user_pseudo_id"])
         base_data["year"].append(row["year"])
         for col in all_round_cols:
+            base_data[col].append(row.get(col, None))
+
+    return pl.DataFrame(base_data)
+
+
+def create_esc_table(rows: list[dict], n_rounds: int = 7) -> pl.DataFrame:
+    """Create an ESC table with n_rounds round columns.
+
+    Args:
+        rows: List of dicts with user_pseudo_id, year, and optional round points.
+        n_rounds: Number of round columns to include (default 7 for 2026 ESC).
+    """
+    round_cols = [f"ESC_t{r} points" for r in range(1, n_rounds + 1)]
+    base_data = {"user_pseudo_id": [], "year": []}
+    for col in round_cols:
+        base_data[col] = []
+
+    for row in rows:
+        base_data["user_pseudo_id"].append(row["user_pseudo_id"])
+        base_data["year"].append(row["year"])
+        for col in round_cols:
             base_data[col].append(row.get(col, None))
 
     return pl.DataFrame(base_data)
@@ -340,6 +363,87 @@ class TestFetchParticipantRecords(unittest.TestCase):
 
         for col in ["user_pseudo_id", "year", "round", "competition", "points"]:
             self.assertIn(col, result.columns)
+
+
+class TestMeltByColumnsESC(unittest.TestCase):
+    """Test melt_by_columns with ESC event type."""
+
+    def test_esc_basic_melt(self):
+        """Test that ESC table melts correctly with ESC competition tag."""
+        esc_table = create_esc_table([
+            {"user_pseudo_id": "Alice", "year": 2026, "ESC_t1 points": 300.0, "ESC_t3 points": 280.0},
+            {"user_pseudo_id": "Bob", "year": 2026, "ESC_t1 points": 250.0},
+        ])
+
+        result = melt_by_columns(esc_table, "ESC")
+
+        # Alice: R1, R3 = 2 rows; Bob: R1 = 1 row
+        self.assertEqual(len(result), 3)
+        self.assertTrue(all(c == "ESC" for c in result["competition"].to_list()))
+
+        rounds = sorted(result["round"].unique().to_list())
+        self.assertEqual(rounds, [1, 3])
+
+    def test_melt_skips_missing_columns(self):
+        """melt_by_columns should not crash when the DataFrame has fewer columns than the max."""
+        # ESC table with only 3 round columns (not the full MAX_ROUNDS)
+        esc_table = create_esc_table([
+            {"user_pseudo_id": "Alice", "year": 2026, "ESC_t1 points": 300.0},
+        ], n_rounds=3)
+
+        # all_esc_round_names() returns up to MAX_ROUNDS columns, but table only has 3
+        result = melt_by_columns(esc_table, "ESC")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["round"].to_list(), [1])
+
+
+class TestNormalizeTableESC(unittest.TestCase):
+    """Test the normalize_table_esc wrapper."""
+
+    def test_adds_esc_competition_tag(self):
+        """Test that ESC tables get the ESC competition tag."""
+        esc_table = create_esc_table([
+            {"user_pseudo_id": "Alice", "year": 2026, "ESC_t1 points": 300.0},
+        ])
+
+        result = normalize_table_esc(esc_table)
+
+        self.assertEqual(result["competition"].to_list()[0], "ESC")
+
+
+class TestNormalizeAllTablesWithESC(unittest.TestCase):
+    """Test normalize_all_tables when ESC data is included."""
+
+    def test_includes_esc_rows(self):
+        """ESC rows appear in the combined output with competition == 'ESC'."""
+        gp_table = create_full_gp_table([
+            {"user_pseudo_id": "Alice", "year": 2026, "GP_t1 points": 800.0},
+        ])
+        wsc_table = create_full_wsc_table([
+            {"user_pseudo_id": "Alice", "year": 2024, "WSC_t1 points": 400.0},
+        ])
+        esc_table = create_esc_table([
+            {"user_pseudo_id": "Alice", "year": 2026, "ESC_t1 points": 300.0, "ESC_t2 points": 290.0},
+            {"user_pseudo_id": "Bob", "year": 2026, "ESC_t1 points": 250.0},
+        ])
+
+        result = normalize_all_tables(gp_table, wsc_table, esc_table)
+
+        esc_rows = result.filter(pl.col("competition") == "ESC")
+        self.assertEqual(len(esc_rows), 3)  # Alice R1, R2; Bob R1
+
+    def test_no_esc_when_not_provided(self):
+        """normalize_all_tables without ESC arg produces no ESC rows."""
+        gp_table = create_full_gp_table([
+            {"user_pseudo_id": "Alice", "year": 2022, "GP_t1 points": 800.0},
+        ])
+        wsc_table = create_full_wsc_table([
+            {"user_pseudo_id": "Alice", "year": 2022, "WSC_t1 points": 400.0},
+        ])
+
+        result = normalize_all_tables(gp_table, wsc_table)
+
+        self.assertFalse(any(c == "ESC" for c in result["competition"].to_list()))
 
 
 if __name__ == "__main__":

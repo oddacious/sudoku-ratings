@@ -3,7 +3,7 @@
 import polars as pl
 
 from ratings.competitions import (
-    CompetitionIdentifier, all_gp_round_names, all_wsc_round_names)
+    CompetitionIdentifier, all_esc_round_names, all_gp_round_names, all_wsc_round_names)
 
 # GP scoring scale changed between 2015 and 2016 from 0-100 to 0-1000.
 # This factor normalizes 2014-2015 scores to the 2016+ scale.
@@ -14,29 +14,42 @@ def melt_by_columns(table: pl.DataFrame, event_type: str) -> pl.DataFrame:
     """Normalize a table to one row per solver-year-competition-round."""
     if event_type == "GP":
         list_of_rounds = all_gp_round_names()
+    elif event_type == "ESC":
+        list_of_rounds = all_esc_round_names()
     else:
         list_of_rounds = all_wsc_round_names()
 
+    # Only melt columns that actually exist in the table (round counts vary by year/event)
+    value_vars = [col for col in list_of_rounds if col in table.columns]
+
     long_df = table.melt(
         id_vars=["user_pseudo_id", "year"],
-        value_vars=list_of_rounds
+        value_vars=value_vars
     )
 
     long_df = long_df.rename({"variable": "round", "value": "points"})
     long_df = long_df.with_columns(
-        pl.col("round").str.extract(r"(\d+) points$").cast(pl.Int64).alias("round")
+        pl.col("round").str.extract(r"(\d+) points$").cast(pl.Int64).alias("round"),
+        pl.col("year").cast(pl.Int64),
     )
     long_df = long_df.filter(pl.col("points").is_not_null())
     if long_df["points"].dtype == "object":
         long_df = long_df.with_column(
             pl.col("points").str.replace(',', '').cast(pl.Float64).alias("points"))
-    long_df = long_df.with_columns(pl.lit(event_type).alias("competition"))
+    long_df = long_df.with_columns(
+        pl.col("points").cast(pl.Float64),
+        pl.lit(event_type).alias("competition"),
+    )
 
     return long_df
 
 def normalize_table_gp(table: pl.DataFrame) -> pl.DataFrame:
     """Normalize a GP table to one row per solver-year-competition-round."""
     return melt_by_columns(table, "GP")
+
+def normalize_table_esc(table: pl.DataFrame) -> pl.DataFrame:
+    """Normalize an ESC table to one row per solver-year-competition-round."""
+    return melt_by_columns(table, "ESC")
 
 def normalize_table_wsc(table: pl.DataFrame) -> pl.DataFrame:
     """Normalize a WSC table to one row per solver-year-competition-round."""
@@ -56,12 +69,16 @@ def normalize_gp_scoring_scale(df: pl.DataFrame) -> pl.DataFrame:
         .alias("points")
     )
 
-def normalize_all_tables(gp: pl.DataFrame, wsc: pl.DataFrame) -> pl.DataFrame:
-    """Normalize GP and WSC tables together to one row per solver-year-competition-round."""
-    gp = normalize_table_gp(gp)
-    wsc = normalize_table_wsc(wsc)
+def normalize_all_tables(
+        gp: pl.DataFrame,
+        wsc: pl.DataFrame,
+        esc=None) -> pl.DataFrame:
+    """Normalize GP, WSC, and optional ESC tables to one row per solver-year-competition-round."""
+    parts = [normalize_table_gp(gp), normalize_table_wsc(wsc)]
+    if esc is not None:
+        parts.append(normalize_table_esc(esc))
 
-    combined = pl.concat([gp, wsc])
+    combined = pl.concat(parts)
 
     # Apply GP scoring scale normalization for 2014-2015
     combined = normalize_gp_scoring_scale(combined)
