@@ -18,3 +18,4 @@ venv/
 .coverage
 *-session.txt
 export/
+snapshots/

@@ -17,6 +17,7 @@ from ratings.cli import (
     cmd_competitions,
     cmd_records,
     cmd_export,
+    cmd_diff,
 )
 
 
@@ -51,6 +52,8 @@ Examples:
   python main.py export                          Export rating data files
   python main.py export --output-dir ./data/     Export to specific directory
   python main.py export --format parquet         Export only Parquet files
+  python main.py diff                            Compare most recent snapshot vs export/
+  python main.py diff --from snapshots/2026-05-13T11-00-00  Compare specific snapshot
   python main.py cache                           Show cache info
   python main.py cache --purge                   Clear the cache
         """
@@ -139,6 +142,13 @@ Examples:
                               default='prior',
                               help='Rating method: prior (default, with regularization) or no-prior')
 
+    # Diff command
+    diff_parser = subparsers.add_parser('diff', help='Compare two export directories')
+    diff_parser.add_argument('--from', type=str, dest='from', metavar='DIR',
+                            help='Source directory (default: most recent snapshot)')
+    diff_parser.add_argument('--to', type=str, dest='to', metavar='DIR',
+                            help='Target directory (default: ./export/)')
+
     # Cache command
     cache_parser = subparsers.add_parser('cache', help='Show or manage data cache')
     cache_parser.add_argument('--purge', action='store_true',
@@ -160,6 +170,8 @@ Examples:
         cmd_records(args)
     elif args.command == 'export':
         cmd_export(args)
+    elif args.command == 'diff':
+        cmd_diff(args)
     elif args.command == 'cache':
         cmd_cache(args)
     else:

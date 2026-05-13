@@ -16,6 +16,7 @@ from ratings.cli.commands import (
     cmd_export,
     compute_horizon_accuracy,
 )
+from ratings.cli.diff_cmd import cmd_diff
 
 __all__ = [
     'load_features',
@@ -27,5 +28,6 @@ __all__ = [
     'cmd_competitions',
     'cmd_records',
     'cmd_export',
+    'cmd_diff',
     'compute_horizon_accuracy',
 ]

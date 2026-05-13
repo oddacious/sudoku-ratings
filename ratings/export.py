@@ -5,6 +5,7 @@ by the sudokudos-github Streamlit app.
 """
 
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -397,6 +398,44 @@ def write_dataframe(df: pl.DataFrame, output_dir: Path, name: str, fmt: str) -> 
         df.write_csv(output_dir / f'{name}.csv')
 
 
+_SNAPSHOT_PARQUET_FILES = [
+    'ratings_timeseries',
+    'leaderboard_current',
+    'leaderboard_alltime',
+    'records',
+]
+
+_SNAPSHOTS_DIR = Path('./snapshots')
+
+
+def snapshot_export(output_dir: Path) -> Optional[Path]:
+    """Copy current parquet exports to a timestamped snapshot directory.
+
+    Called automatically by run_export() before overwriting files.
+
+    Returns:
+        Path to the snapshot directory, or None if no files existed to snapshot.
+    """
+    existing = [output_dir / f'{name}.parquet' for name in _SNAPSHOT_PARQUET_FILES]
+    if not any(p.exists() for p in existing):
+        return None
+
+    ts = datetime.utcnow().strftime('%Y-%m-%dT%H-%M-%S')
+    snapshot_dir = _SNAPSHOTS_DIR / ts
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    for name in _SNAPSHOT_PARQUET_FILES:
+        src = output_dir / f'{name}.parquet'
+        if src.exists():
+            shutil.copy2(src, snapshot_dir / f'{name}.parquet')
+
+    meta_src = output_dir / 'metadata.json'
+    if meta_src.exists():
+        shutil.copy2(meta_src, snapshot_dir / 'metadata.json')
+
+    return snapshot_dir
+
+
 def run_export(
     output_dir: str = './export/',
     fmt: str = 'both',
@@ -416,6 +455,10 @@ def run_export(
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+
+    snapshot_path = snapshot_export(output_path)
+    if snapshot_path:
+        print(f"Snapshot saved: {snapshot_path}", file=sys.stderr)
 
     prior_k = 0 if method == 'no-prior' else 3
 
