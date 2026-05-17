@@ -98,7 +98,7 @@ def _print_leaderboard_diff(
     old_sel = old_lb.select(['user_pseudo_id', 'rank', 'rating'])
     new_sel = new_lb.select(['user_pseudo_id', 'rank', 'rating'])
 
-    joined = old_sel.join(new_sel, on='user_pseudo_id', how='full', suffix='_new')
+    joined = old_sel.join(new_sel, on='user_pseudo_id', how='full', suffix='_new', coalesce=True)
 
     # Entrants and exits
     exits = joined.filter(pl.col('rank_new').is_null())['user_pseudo_id'].to_list()

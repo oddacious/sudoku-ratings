@@ -57,6 +57,25 @@ python -m unittest tests.test_competition_difficulty.TestRelativeDifficultySolve
 pylint ratings/
 ```
 
+**Regenerate all ratings output files:**
+```bash
+python main.py export
+```
+
+**Compare before vs after an export (snapshot is auto-created by export):**
+```bash
+python main.py diff
+python main.py diff --from snapshots/2026-05-13T11-00-00  # specific snapshot
+```
+
+**Standard update workflow (after upstream data or name mapping changes):**
+```bash
+python main.py cache --purge   # required when upstream data or name mappings change
+python main.py export          # auto-snapshots current export/, then regenerates
+python main.py diff            # compare snapshot vs new output to verify changes
+cp export/* ../sudokudos-github/data/ratings/   # publish to sudokudos-github
+```
+
 ## Development Environment
 
 - Python virtual environment located at `./venv`
@@ -167,6 +186,21 @@ pylint ratings/
 - `cmd_competitions()` - shows competition statistics
 - `cmd_records()` - shows career records (#1 counts, longest #1 streak, round wins, total adjusted/raw points, total rounds); supports `--sort`, `--method`, `--top`
 - `compute_horizon_accuracy()` - computes pairwise accuracy over N future rounds
+
+**`ratings/export.py`** - Export pipeline
+- `run_export()` - orchestrates full export: auto-snapshots current `export/`, then writes all files
+- `snapshot_export()` - copies current `export/` to `snapshots/YYYY-MM-DDTHH-MM-SS/` before overwrite
+- `export_timeseries()` - writes `ratings_timeseries.csv/.parquet`
+- `export_current_leaderboard()` - writes `leaderboard_current.csv/.parquet`
+- `export_alltime_leaderboard()` - writes `leaderboard_alltime.csv/.parquet`
+- `export_records()` - writes `records.csv/.parquet`
+- `write_metadata()` - writes `metadata.json`
+- Output directory: `./export/`; snapshots stored in `./snapshots/`
+
+**`ratings/cli/diff_cmd.py`** - Export diff
+- `cmd_diff()` - compares two export directories (default: latest snapshot vs `./export/`)
+- Shows: solver count delta, data_through dates, top-25 leaderboard movers, records changes
+- Flags suspicious changes (|Δrating| ≥ 50.0 or |Δrank| ≥ 30)
 
 **`main.py`** - CLI entry point
 - Argument parsing with argparse
